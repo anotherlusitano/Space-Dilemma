@@ -57,8 +57,8 @@ EstadoPrincipal sistema;
 // Inicialização
 // ---------------------------------------------------------------------------
 void inicializarSistema() {
-  sistema.alfa = 0.0f;
-  sistema.beta = 0.0f;
+  sistema.alfa = 50.0f;
+  sistema.beta = 50.0f;
   sistema.estado = NORMAL;
   sistema.alertaPreIgnicao = false;
   sistema.alertaCorrosao = false;
@@ -78,60 +78,75 @@ float aleatorio(float min, float max) {
   return min + (float)rand() / (float)RAND_MAX * (max - min);
 }
 
-// Atualiza os fatores externos (a cada ~1 segundo)
+// Atualiza os fatores externos (a cada ~1 segundo).
+// Associações:
+//   pressaoMangueiras   -> afeta Beta
+//   pressaoAtmosferica  -> afeta Alfa e Beta
+//   temperaturaAmbiente -> afeta Alfa
+//
+// Todos os fatores têm o mesmo intervalo [0.0, 1.0] centrado em 0.5,
+// para que a pressão média sobre Alfa e Beta seja simétrica e nenhum
+// químico tenha vantagem estrutural.
 void atualizarFatores() {
-  sistema.pressaoMangueiras.valor = aleatorio(
-      sistema.pressaoMangueiras.valorMin, sistema.pressaoMangueiras.valorMax);
-  sistema.pressaoAtmosferica.valor = aleatorio(
-      sistema.pressaoAtmosferica.valorMin, sistema.pressaoAtmosferica.valorMax);
+  sistema.pressaoMangueiras.valor = aleatorio(0.0f, 1.0f);
+  sistema.pressaoAtmosferica.valor = aleatorio(0.0f, 1.0f);
+  sistema.temperaturaAmbiente.valor = aleatorio(0.0f, 1.0f);
+
+  // Feedback das substâncias sobre os fatores (simétrico):
+  //   Alfa acima de 50% pressiona a temperatura
+  //   Beta acima de 50% pressiona as mangueiras
+  float desvioAlfa = (sistema.alfa - 50.0f) / 100.0f; // -0.5 a +0.5
+  float desvioBeta = (sistema.beta - 50.0f) / 100.0f; // -0.5 a +0.5
+
+  sistema.temperaturaAmbiente.valor += desvioAlfa * 0.3f;
+  sistema.pressaoMangueiras.valor += desvioBeta * 0.3f;
+
+  // Garante que os fatores ficam dentro de [0.0, 1.0]
+  auto clamp01 = [](float v) {
+    return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+  };
+  sistema.pressaoMangueiras.valor = clamp01(sistema.pressaoMangueiras.valor);
+  sistema.pressaoAtmosferica.valor = clamp01(sistema.pressaoAtmosferica.valor);
   sistema.temperaturaAmbiente.valor =
-      aleatorio(sistema.temperaturaAmbiente.valorMin,
-                sistema.temperaturaAmbiente.valorMax);
-
-  // As substâncias afetam a pressão das mangueiras: mais alfa+beta = mais
-  // pressão
-  float pressaoExtra = (sistema.alfa + sistema.beta) / 200.0f;
-  sistema.pressaoMangueiras.valor += pressaoExtra * 0.3f;
-  if (sistema.pressaoMangueiras.valor > sistema.pressaoMangueiras.valorMax)
-    sistema.pressaoMangueiras.valor = sistema.pressaoMangueiras.valorMax;
+      clamp01(sistema.temperaturaAmbiente.valor);
 }
 
-// Calcula o multiplicador de aumento com base nos fatores externos
-//   fatores baixos  (media < 0.4) -> 1x  (~1 a 5)
-//   fatores médios  (media < 0.7) -> 2x  (~5 a 10)
-//   fatores altos   (media >= 0.7)-> 3x  (~10 a 15)
-float calcularMultiplicador() {
-  // Calcula a média dos fatores externos
-  float media =
-      (sistema.pressaoMangueiras.valor + sistema.pressaoAtmosferica.valor +
-       sistema.temperaturaAmbiente.valor) /
-      3.0f;
-
-  if (media < 0.4f)
-    return 1.0f;
-  if (media < 0.7f)
-    return 2.0f;
-  return 3.0f;
-}
-
-// Atualiza Alfa e Beta (a cada ~2 segundos)
+// Atualiza Alfa e Beta mantendo a soma = 100.
+//
+// Cada fator contribui para o deltaAlfa com o mesmo peso:
+//   temperaturaAmbiente -> sobe Alfa  (+)
+//   pressaoMangueiras   -> desce Alfa (-) [sobe Beta]
+//   pressaoAtmosferica  -> sobe ou desce Alfa consoante o seu valor
+//
+// Com fatores uniformes em [0,1] e pesos iguais, E[deltaAlfa] = 0,
+// ou seja, em média a mistura não deriva para nenhum lado.
 void atualizarSubstancias() {
-  float mult = calcularMultiplicador();
+  // Normaliza cada fator para [-1.0, +1.0] (neutro = 0 quando fator = 0.5)
+  float dTemp = (sistema.temperaturaAmbiente.valor - 0.5f) * 2.0f;
+  float dMang = (sistema.pressaoMangueiras.valor - 0.5f) * 2.0f;
+  float dAtm = (sistema.pressaoAtmosferica.valor - 0.5f) * 2.0f;
 
-  // Aumenta Alfa e Beta com base no multiplicador
-  sistema.alfa += aleatorio(1.0f, 5.0f) * mult;
-  sistema.beta += aleatorio(1.0f, 5.0f) * mult;
+  // Pesos iguais; magnitude aleatória comum a todos os fatores
+  float magnitude = aleatorio(1.0f, 4.0f);
 
-  // Limita os valores para não ultrapassarem 100%
+  float deltaAlfa = 0.0f;
+  deltaAlfa += dTemp * magnitude; // temperatura sobe Alfa
+  deltaAlfa -= dMang * magnitude; // mangueiras sobem Beta (inverso em Alfa)
+  deltaAlfa += dAtm * magnitude;  // atmosférica afeta ambos igualmente
+
+  sistema.alfa += deltaAlfa;
+
+  if (sistema.alfa < 0.0f)
+    sistema.alfa = 0.0f;
   if (sistema.alfa > 100.0f)
     sistema.alfa = 100.0f;
-  if (sistema.beta > 100.0f)
-    sistema.beta = 100.0f;
+
+  sistema.beta = 100.0f - sistema.alfa;
 }
 
 // Avalia o estado do sistema com base nos valores atuais
+// Com soma = 100: Alfa >= 100 significa Beta = 0, e vice-versa
 void avaliarEstado() {
-  // Verifica falha crítica
   if (sistema.alfa >= 100.0f || sistema.beta >= 100.0f) {
     sistema.estado = FALHA;
     sistema.sistemaTerminado = true;
@@ -142,7 +157,7 @@ void avaliarEstado() {
   sistema.alertaPreIgnicao = (sistema.alfa > 70.0f);
   sistema.alertaCorrosao = (sistema.beta > 80.0f);
 
-  // Define o estado com base nos alertas
+  // PRE_IGNICAO tem prioridade (Alfa > 70 é mais perigoso a curto prazo)
   if (sistema.alertaPreIgnicao) {
     sistema.estado = PRE_IGNICAO;
   } else if (sistema.alertaCorrosao) {
@@ -165,8 +180,8 @@ void timerSubstancias(int valor) {
   if (sistema.sistemaTerminado) {
     printf("FALHA CRITICA: sistema terminado.\n");
     glutPostRedisplay();
+
     exit(0); // Encerra o programa
-    return;
   }
 
   glutPostRedisplay();
