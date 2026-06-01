@@ -7,6 +7,8 @@
 // Dimensões da Janela
 const int LARGURA_JANELA = 800;
 const int ALTURA_JANELA = 600;
+int larguraJanela = LARGURA_JANELA;
+int alturaJanela = ALTURA_JANELA;
 
 // ---------------------------------------------------------------------------
 // Estados do Sistema
@@ -236,11 +238,19 @@ void desenharTexto(const char *texto, float x, float y) {
   }
 }
 
-// Desenha texto pequeno (para labels secundárias)
+// Desenha texto pequeno (12px — para labels secundárias nas barras)
 void desenharTextoPequeno(const char *texto, float x, float y) {
   glRasterPos2f(x, y);
   for (const char *c = texto; *c != '\0'; c++) {
     glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, *c);
+  }
+}
+
+// Desenha texto médio (18px — para painel de fatores e topbar)
+void desenharTextoMedio(const char *texto, float x, float y) {
+  glRasterPos2f(x, y);
+  for (const char *c = texto; *c != '\0'; c++) {
+    glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, *c);
   }
 }
 
@@ -349,6 +359,151 @@ void desenharPainelSubstancias() {
 }
 
 // ---------------------------------------------------------------------------
+// HUD — Topbar de alertas
+// ---------------------------------------------------------------------------
+void desenharTopbar() {
+  const float ALTURA_TOPBAR = 44.0f;
+  const float ALTURA_FONTE = 14.0f; // altura aprox. HELVETICA_18
+  // yBase ancorado ao topo real da janela (atualizado pelo reshape)
+  const float yBase = 560.0f;
+  // Centra o texto verticalmente dentro da barra
+  const float yTexto = yBase + (ALTURA_TOPBAR - ALTURA_FONTE) / 2.0f;
+
+  // Fundo
+  if (sistema.alertaPreIgnicao || sistema.alertaCorrosao)
+    definirCor(0.18f, 0.03f, 0.03f);
+  else
+    definirCor(0.06f, 0.07f, 0.09f);
+  desenharRetangulo(0.0f, yBase, (float)larguraJanela, ALTURA_TOPBAR);
+
+  // Linha divisória na base da topbar
+  definirCor(0.25f, 0.30f, 0.36f);
+  desenharRetangulo(0.0f, yBase - 1.5f, (float)larguraJanela, 1.5f);
+
+  float xCursor = 20.0f;
+
+  if (!sistema.alertaPreIgnicao && !sistema.alertaCorrosao) {
+    definirCor(0.30f, 0.38f, 0.42f);
+    desenharTextoMedio("SISTEMA NORMAL", xCursor, yTexto);
+    return;
+  }
+
+  if (sistema.alertaPreIgnicao) {
+    // Indicador colorido
+    definirCor(1.0f, 0.72f, 0.0f);
+    desenharRetangulo(xCursor, yTexto, 6.0f, ALTURA_FONTE);
+    xCursor += 14.0f;
+
+    definirCor(1.0f, 0.20f, 0.10f);
+    desenharTextoMedio("ALERTA: PRE-IGNICAO", xCursor, yTexto);
+    xCursor += 232.0f;
+
+    definirCor(0.85f, 0.85f, 0.85f);
+    desenharTextoMedio("ALFA acima do limite critico (70%)", xCursor, yTexto);
+    xCursor += 310.0f;
+  }
+
+  if (sistema.alertaCorrosao) {
+    if (sistema.alertaPreIgnicao) {
+      definirCor(0.35f, 0.20f, 0.10f);
+      desenharRetangulo(xCursor, yTexto, 1.5f, ALTURA_FONTE);
+      xCursor += 16.0f;
+    }
+
+    definirCor(1.0f, 0.38f, 0.0f);
+    desenharRetangulo(xCursor, yTexto, 6.0f, ALTURA_FONTE);
+    xCursor += 14.0f;
+
+    definirCor(1.0f, 0.20f, 0.10f);
+    desenharTextoMedio("ALERTA: CORROSAO", xCursor, yTexto);
+    xCursor += 204.0f;
+
+    definirCor(0.85f, 0.85f, 0.85f);
+    desenharTextoMedio("BETA acima do limite critico (80%)", xCursor, yTexto);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// HUD — Painel de fatores externos (canto inferior esquerdo)
+// ---------------------------------------------------------------------------
+void desenharPainelFatores() {
+  // Todas as medidas em píxeis fixos — não escalam com a janela
+  const float MARGEM = 16.0f;
+  const float LARGURA_PANEL = 270.0f;
+  const float ALTURA_TITULO = 22.0f; // altura da linha de título
+  const float ALTURA_LINHA = 22.0f;  // altura fixa de cada linha de fator
+  const float SEP = 1.0f;            // espessura da linha separadora
+  const float ALTURA_PANEL = ALTURA_TITULO + SEP + ALTURA_LINHA * 3.0f + 16.0f;
+  const float xBase = MARGEM;
+  const float yBase = MARGEM;
+  const float xTexto = xBase + 12.0f;
+  const float xValor =
+      xBase + LARGURA_PANEL - 52.0f; // coluna de valores alinhada à direita
+
+  // Fundo do painel
+  definirCor(0.05f, 0.07f, 0.09f);
+  desenharRetangulo(xBase, yBase, LARGURA_PANEL, ALTURA_PANEL);
+
+  // Borda
+  definirCor(0.20f, 0.28f, 0.35f);
+  desenharContorno(xBase, yBase, LARGURA_PANEL, ALTURA_PANEL, 1.5f);
+
+  // Título — posicionado a partir do topo do painel
+  float yTitulo = yBase + ALTURA_PANEL - ALTURA_TITULO + 4.0f;
+  definirCor(0.45f, 0.55f, 0.62f);
+  desenharTextoMedio("FATORES EXTERNOS", xTexto, yTitulo);
+
+  // Linha separadora sob o título
+  float ySep = yBase + ALTURA_PANEL - ALTURA_TITULO;
+  definirCor(0.20f, 0.28f, 0.35f);
+  desenharRetangulo(xBase + 8.0f, ySep, LARGURA_PANEL - 16.0f, SEP);
+
+  // Linhas de fatores — espaçamento fixo de ALTURA_LINHA px
+  char buf[32];
+
+  float yLinha = ySep - ALTURA_LINHA + 4.0f;
+  definirCor(0.55f, 0.65f, 0.70f);
+  desenharTextoMedio("Pressao Mangueiras:", xTexto, yLinha);
+  snprintf(buf, sizeof(buf), "%.2f", sistema.pressaoMangueiras.valor);
+  definirCor(1.0f, 0.38f, 0.0f);
+  desenharTextoMedio(buf, xValor, yLinha);
+
+  yLinha -= ALTURA_LINHA;
+  definirCor(0.55f, 0.65f, 0.70f);
+  desenharTextoMedio("Pressao Atmosferica:", xTexto, yLinha);
+  snprintf(buf, sizeof(buf), "%.2f", sistema.pressaoAtmosferica.valor);
+  definirCor(0.75f, 0.55f, 0.10f);
+  desenharTextoMedio(buf, xValor, yLinha);
+
+  yLinha -= ALTURA_LINHA;
+  definirCor(0.55f, 0.65f, 0.70f);
+  desenharTextoMedio("Temp. Ambiente:     ", xTexto, yLinha);
+  snprintf(buf, sizeof(buf), "%.2f", sistema.temperaturaAmbiente.valor);
+  definirCor(1.0f, 0.72f, 0.0f);
+  desenharTextoMedio(buf, xValor, yLinha);
+}
+
+// ---------------------------------------------------------------------------
+// Reshape — atualiza dimensões reais da janela
+// ---------------------------------------------------------------------------
+void reshape(int novaLargura, int novaAltura) {
+  larguraJanela = novaLargura;
+  alturaJanela = novaAltura;
+
+  glViewport(0, 0, novaLargura, novaAltura);
+
+  // Reconfigurar a projeção aqui garante que está sempre sincronizada
+  // com as dimensões reais da janela antes de qualquer draw
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  gluOrtho2D(0, (float)novaLargura, 0, (float)novaAltura);
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+
+  glutPostRedisplay();
+}
+
+// ---------------------------------------------------------------------------
 // Display
 // ---------------------------------------------------------------------------
 void display() {
@@ -361,7 +516,9 @@ void display() {
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
 
+  desenharTopbar();
   desenharPainelSubstancias();
+  desenharPainelFatores();
 
   glutSwapBuffers();
 }
@@ -418,6 +575,7 @@ int main(int argc, char **argv) {
   glutCreateWindow("Space Dilemma");
 
   glutDisplayFunc(display);
+  glutReshapeFunc(reshape);
   glutKeyboardFunc(teclado);
 
   glutTimerFunc(1000, timerFatores, 0);
