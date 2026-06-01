@@ -329,8 +329,8 @@ void desenharPainelSubstancias() {
   const float LARGURA_BARRA = 420.0f;
   const float ALTURA_BARRA = 32.0f;
   const float ESPACAMENTO = 70.0f; // distância vertical entre as duas barras
-  const float xCentro = (LARGURA_JANELA - LARGURA_BARRA) / 2.0f;
-  const float yCentroJanela = ALTURA_JANELA / 2.0f;
+  const float xCentro = (larguraJanela - LARGURA_BARRA) / 2.0f;
+  const float yCentroJanela = alturaJanela / 2.0f;
 
   // Posições Y das barras (a barra de Alfa fica acima da de Beta)
   float yAlfa = yCentroJanela + ESPACAMENTO / 2.0f;
@@ -365,7 +365,7 @@ void desenharTopbar() {
   const float ALTURA_TOPBAR = 44.0f;
   const float ALTURA_FONTE = 14.0f; // altura aprox. HELVETICA_18
   // yBase ancorado ao topo real da janela (atualizado pelo reshape)
-  const float yBase = 560.0f;
+  const float yBase = alturaJanela - ALTURA_TOPBAR;
   // Centra o texto verticalmente dentro da barra
   const float yTexto = yBase + (ALTURA_TOPBAR - ALTURA_FONTE) / 2.0f;
 
@@ -484,6 +484,65 @@ void desenharPainelFatores() {
 }
 
 // ---------------------------------------------------------------------------
+// HUD — Painel de comandos (canto inferior direito)
+// ---------------------------------------------------------------------------
+void desenharPainelComandos() {
+  const float MARGEM = 16.0f;
+  const float LARGURA_PANEL = 230.0f;
+  const float ALTURA_TITULO = 22.0f;
+  const float ALTURA_LINHA = 22.0f;
+  const float SEP = 1.0f;
+  const int NUM_LINHAS = 3;
+  const float ALTURA_PANEL =
+      ALTURA_TITULO + SEP + ALTURA_LINHA * NUM_LINHAS + 16.0f;
+  const float xBase = (float)larguraJanela - LARGURA_PANEL - MARGEM;
+  const float yBase = MARGEM;
+  const float xTexto = xBase + 12.0f;
+  const float xTecla = xBase + LARGURA_PANEL - 42.0f;
+
+  // Fundo
+  definirCor(0.05f, 0.07f, 0.09f);
+  desenharRetangulo(xBase, yBase, LARGURA_PANEL, ALTURA_PANEL);
+
+  // Borda
+  definirCor(0.20f, 0.28f, 0.35f);
+  desenharContorno(xBase, yBase, LARGURA_PANEL, ALTURA_PANEL, 1.5f);
+
+  // Título
+  float yTitulo = yBase + ALTURA_PANEL - ALTURA_TITULO + 4.0f;
+  definirCor(0.45f, 0.55f, 0.62f);
+  desenharTextoMedio("COMANDOS", xTexto, yTitulo);
+
+  // Linha separadora
+  float ySep = yBase + ALTURA_PANEL - ALTURA_TITULO;
+  definirCor(0.20f, 0.28f, 0.35f);
+  desenharRetangulo(xBase + 8.0f, ySep, LARGURA_PANEL - 16.0f, SEP);
+
+  // Linhas de comandos
+  float yLinha = ySep - ALTURA_LINHA + 4.0f;
+
+  // Aumentar Alfa
+  definirCor(0.55f, 0.65f, 0.70f);
+  desenharTextoMedio("Aumentar Alfa", xTexto, yLinha);
+  definirCor(1.0f, 0.72f, 0.0f); // amarelo-ambar (cor do Alfa)
+  desenharTextoMedio("[A]", xTecla, yLinha);
+  yLinha -= ALTURA_LINHA;
+
+  // Aumentar Beta
+  definirCor(0.55f, 0.65f, 0.70f);
+  desenharTextoMedio("Aumentar Beta", xTexto, yLinha);
+  definirCor(1.0f, 0.38f, 0.0f); // laranja (cor do Beta)
+  desenharTextoMedio("[B]", xTecla, yLinha);
+  yLinha -= ALTURA_LINHA;
+
+  // Ajuda
+  definirCor(0.55f, 0.65f, 0.70f);
+  desenharTextoMedio("Ajuda (consola)", xTexto, yLinha);
+  definirCor(0.45f, 0.55f, 0.62f);
+  desenharTextoMedio("[H]", xTecla, yLinha);
+}
+
+// ---------------------------------------------------------------------------
 // Reshape — atualiza dimensões reais da janela
 // ---------------------------------------------------------------------------
 void reshape(int novaLargura, int novaAltura) {
@@ -509,16 +568,10 @@ void reshape(int novaLargura, int novaAltura) {
 void display() {
   glClear(GL_COLOR_BUFFER_BIT);
 
-  // Configura projeção 2D ortogonal (píxeis)
-  glMatrixMode(GL_PROJECTION);
-  glLoadIdentity();
-  gluOrtho2D(0, LARGURA_JANELA, 0, ALTURA_JANELA);
-  glMatrixMode(GL_MODELVIEW);
-  glLoadIdentity();
-
   desenharTopbar();
   desenharPainelSubstancias();
   desenharPainelFatores();
+  desenharPainelComandos();
 
   glutSwapBuffers();
 }
@@ -528,13 +581,27 @@ void display() {
 // ---------------------------------------------------------------------------
 void teclado(unsigned char key, int x, int y) {
   switch (key) {
-  case 'b':
-  case 'B':
-    printf("Beta: %.1f%%\n", sistema.beta);
-    break;
   case 'a':
   case 'A':
-    printf("Alfa: %.1f%%\n", sistema.alfa);
+    if (!sistema.sistemaTerminado && sistema.alfa < 100.0f) {
+      sistema.alfa += 5.0f;
+      if (sistema.alfa > 100.0f)
+        sistema.alfa = 100.0f;
+      sistema.beta = 100.0f - sistema.alfa;
+      avaliarEstado();
+      glutPostRedisplay();
+    }
+    break;
+  case 'b':
+  case 'B':
+    if (!sistema.sistemaTerminado && sistema.beta < 100.0f) {
+      sistema.beta += 5.0f;
+      if (sistema.beta > 100.0f)
+        sistema.beta = 100.0f;
+      sistema.alfa = 100.0f - sistema.beta;
+      avaliarEstado();
+      glutPostRedisplay();
+    }
     break;
   case 'h':
   case 'H':
@@ -576,6 +643,7 @@ int main(int argc, char **argv) {
 
   glutDisplayFunc(display);
   glutReshapeFunc(reshape);
+  glutSetKeyRepeat(GLUT_KEY_REPEAT_OFF);
   glutKeyboardFunc(teclado);
 
   glutTimerFunc(1000, timerFatores, 0);
