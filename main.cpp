@@ -23,6 +23,13 @@ enum EstadoSistema {
 // ---------------------------------------------------------------------------
 // Fatores Externos
 // ---------------------------------------------------------------------------
+// Fase de comportamento de cada fator externo
+enum FaseDeriva {
+  FASE_ESTAVEL, // oscila aleatoriamente perto do neutro
+  FASE_DERIVA,  // afasta-se consistentemente do neutro
+  FASE_CRITICO  // preso na zona extrema, só a equipa resolve
+};
+
 struct FatorExterno {
   const char *nome;
   const char *unidade; // ex: "C", "bar", "kPa"
@@ -30,6 +37,8 @@ struct FatorExterno {
   float neutro;
   float valorMin;
   float valorMax;
+  FaseDeriva fase;
+  float direcaoDeriva; // +1.0 = afasta para cima, -1.0 = afasta para baixo
 };
 
 // ---------------------------------------------------------------------------
@@ -81,13 +90,14 @@ void inicializarSistema() {
   sistema.alertaCorrosao = false;
   sistema.sistemaTerminado = false;
 
-  // nome  unidade  valor  neutro  min   max
+  // nome  unidade  valor  neutro  min   max  fase direção
   sistema.pressaoMangueiras = {
-      "Pressao Mangueiras", "bar", 6.0f, 6.0f, 2.0f, 12.0f};
+      "Pressao Mangueiras", "bar", 6.0f, 6.0f, 2.0f, 12.0f, FASE_ESTAVEL, 0.0f};
   sistema.pressaoAtmosferica = {"Pressao Camara", "kPa", 101.0f,
-                                101.0f,           80.0f, 140.0f};
-  sistema.temperaturaAmbiente = {"Temp. Camara", "C",    20.0f,
-                                 20.0f,          -20.0f, 60.0f};
+                                101.0f,           80.0f, 140.0f,
+                                FASE_ESTAVEL,     0.0f};
+  sistema.temperaturaAmbiente = {"Temp. Camara", "C",   20.0f,        20.0f,
+                                 -20.0f,         60.0f, FASE_ESTAVEL, 0.0f};
 }
 
 // ---------------------------------------------------------------------------
@@ -113,51 +123,110 @@ float clampF(float v, float min, float max) {
   return v < min ? min : (v > max ? max : v);
 }
 
+// ---------------------------------------------------------------------------
+// Constantes de afinação dos fatores externos
+// Ajusta estes valores para calibrar o comportamento do sistema
+// ---------------------------------------------------------------------------
+const float FATOR_LIMIAR_DERIVA =
+    0.30f; // % do range desde neutro para entrar em deriva
+const float FATOR_LIMIAR_CRITICO =
+    0.70f; // % do range desde neutro para entrar em crítico
+
+const float FATOR_OSCILACAO_ESTAVEL =
+    0.05f; // oscilação aleatória em fase estável (% range/tick)
+const float FATOR_OSCILACAO_DERIVA =
+    0.03f; // oscilação aleatória em fase de deriva (% range/tick)
+const float FATOR_OSCILACAO_CRITICO =
+    0.02f; // oscilação aleatória em fase crítica (% range/tick)
+
+const float FATOR_BIAS_DERIVA =
+    0.03f; // bias de afastamento em fase de deriva (% range/tick)
+
 // Atualiza os fatores externos (a cada ~1 segundo).
 // Associações:
 //   pressaoMangueiras   -> afeta Beta
 //   pressaoAtmosferica  -> afeta Alfa e Beta
 //   temperaturaAmbiente -> afeta Alfa
 //
-// Cada fator varia aleatoriamente em torno do seu neutro, com os valores
-// a oscilarem em unidades reais (bar, kPa, °C).
+// Cada fator passa por 3 fases: ESTAVEL -> DERIVA -> CRITICO
+// Só a equipa consegue repor um fator crítico para o neutro.
 void atualizarFatores() {
-  // Variação aleatória: cada fator oscila ±20% do seu range por tick
-  auto variarFator = [](FatorExterno &f) {
+
+  auto atualizarFase = [](FatorExterno &f) {
     float range = f.valorMax - f.valorMin;
-    float variacao = aleatorio(-range * 0.20f, range * 0.20f);
+    float distancia = f.valor - f.neutro; // positivo = acima do neutro
+
+    // Calcula o desvio normalizado: 0.0 = neutro, 1.0 = extremo
+    float desvioNorm;
+    if (distancia >= 0.0f)
+      desvioNorm = distancia / (f.valorMax - f.neutro);
+    else
+      desvioNorm = -distancia / (f.neutro - f.valorMin);
+
+    // --- Transições de fase ---
+    if (f.fase == FASE_ESTAVEL) {
+      if (desvioNorm >= FATOR_LIMIAR_DERIVA) {
+        f.fase = FASE_DERIVA;
+        f.direcaoDeriva = (distancia >= 0.0f) ? 1.0f : -1.0f;
+      }
+    } else if (f.fase == FASE_DERIVA) {
+      if (desvioNorm >= FATOR_LIMIAR_CRITICO) {
+        f.fase = FASE_CRITICO;
+      } else if (desvioNorm < FATOR_LIMIAR_DERIVA * 0.5f) {
+        // Voltou perto do neutro (histerese) -> estável de novo
+        f.fase = FASE_ESTAVEL;
+        f.direcaoDeriva = 0.0f;
+      }
+    }
+    // FASE_CRITICO só sai via equipa (ver estabilizarFator)
+
+    // --- Variação por fase ---
+    float variacao = 0.0f;
+    switch (f.fase) {
+    case FASE_ESTAVEL:
+      variacao = aleatorio(-range * FATOR_OSCILACAO_ESTAVEL,
+                           range * FATOR_OSCILACAO_ESTAVEL);
+      break;
+    case FASE_DERIVA:
+      // Bias consistente na direção de deriva + pequena oscilação
+      variacao = f.direcaoDeriva * range * FATOR_BIAS_DERIVA;
+      variacao += aleatorio(-range * FATOR_OSCILACAO_DERIVA,
+                            range * FATOR_OSCILACAO_DERIVA);
+      break;
+    case FASE_CRITICO:
+      // Oscila ligeiramente mas fica preso na zona crítica
+      variacao = aleatorio(-range * FATOR_OSCILACAO_CRITICO,
+                           range * FATOR_OSCILACAO_CRITICO);
+      break;
+    }
+
     f.valor = clampF(f.valor + variacao, f.valorMin, f.valorMax);
   };
 
-  variarFator(sistema.pressaoMangueiras);
-  variarFator(sistema.pressaoAtmosferica);
-  variarFator(sistema.temperaturaAmbiente);
+  atualizarFase(sistema.pressaoMangueiras);
+  atualizarFase(sistema.pressaoAtmosferica);
+  atualizarFase(sistema.temperaturaAmbiente);
 
-  // Feedback das substâncias sobre os fatores (simétrico):
-  //   Alfa alto  -> pressiona temperatura para cima
-  //   Beta alto  -> pressiona mangueiras para cima
-  float desvioAlfa = (sistema.alfa - 50.0f) / 100.0f; // -0.5 a +0.5
-  float desvioBeta = (sistema.beta - 50.0f) / 100.0f; // -0.5 a +0.5
+  // Feedback das substâncias sobre os fatores (só em fase estável/deriva,
+  // não interfere com fator crítico)
+  float desvioAlfa = (sistema.alfa - 50.0f) / 100.0f;
+  float desvioBeta = (sistema.beta - 50.0f) / 100.0f;
 
-  // Feedback proporcional ao range de cada fator
-  float rangeMang =
-      sistema.pressaoMangueiras.valorMax - sistema.pressaoMangueiras.valorMin;
-  float rangeTemp = sistema.temperaturaAmbiente.valorMax -
-                    sistema.temperaturaAmbiente.valorMin;
-
-  sistema.pressaoMangueiras.valor += desvioBeta * rangeMang * 0.15f;
-  sistema.temperaturaAmbiente.valor += desvioAlfa * rangeTemp * 0.15f;
-
-  // Garante que os fatores ficam dentro dos seus limites reais
-  sistema.pressaoMangueiras.valor = clampF(sistema.pressaoMangueiras.valor,
-                                           sistema.pressaoMangueiras.valorMin,
-                                           sistema.pressaoMangueiras.valorMax);
-  sistema.pressaoAtmosferica.valor = clampF(
-      sistema.pressaoAtmosferica.valor, sistema.pressaoAtmosferica.valorMin,
-      sistema.pressaoAtmosferica.valorMax);
-  sistema.temperaturaAmbiente.valor = clampF(
-      sistema.temperaturaAmbiente.valor, sistema.temperaturaAmbiente.valorMin,
-      sistema.temperaturaAmbiente.valorMax);
+  if (sistema.pressaoMangueiras.fase != FASE_CRITICO) {
+    float range =
+        sistema.pressaoMangueiras.valorMax - sistema.pressaoMangueiras.valorMin;
+    sistema.pressaoMangueiras.valor = clampF(
+        sistema.pressaoMangueiras.valor + desvioBeta * range * 0.05f,
+        sistema.pressaoMangueiras.valorMin, sistema.pressaoMangueiras.valorMax);
+  }
+  if (sistema.temperaturaAmbiente.fase != FASE_CRITICO) {
+    float range = sistema.temperaturaAmbiente.valorMax -
+                  sistema.temperaturaAmbiente.valorMin;
+    sistema.temperaturaAmbiente.valor =
+        clampF(sistema.temperaturaAmbiente.valor + desvioAlfa * range * 0.05f,
+               sistema.temperaturaAmbiente.valorMin,
+               sistema.temperaturaAmbiente.valorMax);
+  }
 }
 
 // Atualiza Alfa e Beta mantendo a soma = 100.
