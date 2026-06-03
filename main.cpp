@@ -25,7 +25,9 @@ enum EstadoSistema {
 // ---------------------------------------------------------------------------
 struct FatorExterno {
   const char *nome;
-  float valor; // valor atual (0.0 - 1.0)
+  const char *unidade; // ex: "C", "bar", "kPa"
+  float valor;
+  float neutro;
   float valorMin;
   float valorMax;
 };
@@ -79,9 +81,13 @@ void inicializarSistema() {
   sistema.alertaCorrosao = false;
   sistema.sistemaTerminado = false;
 
-  sistema.pressaoMangueiras = {"Pressao Mangueiras", 0.5f, 0.1f, 1.0f};
-  sistema.pressaoAtmosferica = {"Pressao Atmosferica", 0.5f, 0.2f, 0.9f};
-  sistema.temperaturaAmbiente = {"Temperatura Ambiente", 0.5f, 0.1f, 1.0f};
+  // nome  unidade  valor  neutro  min   max
+  sistema.pressaoMangueiras = {
+      "Pressao Mangueiras", "bar", 6.0f, 6.0f, 2.0f, 12.0f};
+  sistema.pressaoAtmosferica = {"Pressao Camara", "kPa", 101.0f,
+                                101.0f,           80.0f, 140.0f};
+  sistema.temperaturaAmbiente = {"Temp. Camara", "C",    20.0f,
+                                 20.0f,          -20.0f, 60.0f};
 }
 
 // ---------------------------------------------------------------------------
@@ -93,69 +99,89 @@ float aleatorio(float min, float max) {
   return min + (float)rand() / (float)RAND_MAX * (max - min);
 }
 
+// Normaliza um fator para [-1.0, +1.0] relativamente ao seu neutro.
+// neutro = 0.0, max positivo = +1.0, max negativo = -1.0
+float normalizarFator(const FatorExterno &f) {
+  if (f.valor >= f.neutro)
+    return (f.valor - f.neutro) / (f.valorMax - f.neutro);
+  else
+    return (f.valor - f.neutro) / (f.neutro - f.valorMin);
+}
+
+// Clampa um valor entre min e max
+float clampF(float v, float min, float max) {
+  return v < min ? min : (v > max ? max : v);
+}
+
 // Atualiza os fatores externos (a cada ~1 segundo).
 // Associações:
 //   pressaoMangueiras   -> afeta Beta
 //   pressaoAtmosferica  -> afeta Alfa e Beta
 //   temperaturaAmbiente -> afeta Alfa
 //
-// Todos os fatores têm o mesmo intervalo [0.0, 1.0] centrado em 0.5,
-// para que a pressão média sobre Alfa e Beta seja simétrica e nenhum
-// químico tenha vantagem estrutural.
+// Cada fator varia aleatoriamente em torno do seu neutro, com os valores
+// a oscilarem em unidades reais (bar, kPa, °C).
 void atualizarFatores() {
-  sistema.pressaoMangueiras.valor = aleatorio(0.0f, 1.0f);
-  sistema.pressaoAtmosferica.valor = aleatorio(0.0f, 1.0f);
-  sistema.temperaturaAmbiente.valor = aleatorio(0.0f, 1.0f);
+  // Variação aleatória: cada fator oscila ±20% do seu range por tick
+  auto variarFator = [](FatorExterno &f) {
+    float range = f.valorMax - f.valorMin;
+    float variacao = aleatorio(-range * 0.20f, range * 0.20f);
+    f.valor = clampF(f.valor + variacao, f.valorMin, f.valorMax);
+  };
+
+  variarFator(sistema.pressaoMangueiras);
+  variarFator(sistema.pressaoAtmosferica);
+  variarFator(sistema.temperaturaAmbiente);
 
   // Feedback das substâncias sobre os fatores (simétrico):
-  //   Alfa acima de 50% pressiona a temperatura
-  //   Beta acima de 50% pressiona as mangueiras
+  //   Alfa alto  -> pressiona temperatura para cima
+  //   Beta alto  -> pressiona mangueiras para cima
   float desvioAlfa = (sistema.alfa - 50.0f) / 100.0f; // -0.5 a +0.5
   float desvioBeta = (sistema.beta - 50.0f) / 100.0f; // -0.5 a +0.5
 
-  sistema.temperaturaAmbiente.valor += desvioAlfa * 0.3f;
-  sistema.pressaoMangueiras.valor += desvioBeta * 0.3f;
+  // Feedback proporcional ao range de cada fator
+  float rangeMang =
+      sistema.pressaoMangueiras.valorMax - sistema.pressaoMangueiras.valorMin;
+  float rangeTemp = sistema.temperaturaAmbiente.valorMax -
+                    sistema.temperaturaAmbiente.valorMin;
 
-  // Garante que os fatores ficam dentro de [0.0, 1.0]
-  auto clamp01 = [](float v) {
-    return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
-  };
-  sistema.pressaoMangueiras.valor = clamp01(sistema.pressaoMangueiras.valor);
-  sistema.pressaoAtmosferica.valor = clamp01(sistema.pressaoAtmosferica.valor);
-  sistema.temperaturaAmbiente.valor =
-      clamp01(sistema.temperaturaAmbiente.valor);
+  sistema.pressaoMangueiras.valor += desvioBeta * rangeMang * 0.15f;
+  sistema.temperaturaAmbiente.valor += desvioAlfa * rangeTemp * 0.15f;
+
+  // Garante que os fatores ficam dentro dos seus limites reais
+  sistema.pressaoMangueiras.valor = clampF(sistema.pressaoMangueiras.valor,
+                                           sistema.pressaoMangueiras.valorMin,
+                                           sistema.pressaoMangueiras.valorMax);
+  sistema.pressaoAtmosferica.valor = clampF(
+      sistema.pressaoAtmosferica.valor, sistema.pressaoAtmosferica.valorMin,
+      sistema.pressaoAtmosferica.valorMax);
+  sistema.temperaturaAmbiente.valor = clampF(
+      sistema.temperaturaAmbiente.valor, sistema.temperaturaAmbiente.valorMin,
+      sistema.temperaturaAmbiente.valorMax);
 }
 
 // Atualiza Alfa e Beta mantendo a soma = 100.
 //
-// Cada fator contribui para o deltaAlfa com o mesmo peso:
+// Cada fator é normalizado para [-1.0, +1.0] relativamente ao seu neutro
+// com normalizarFator(), garantindo que a escala real (bar, kPa, °C) não
+// introduz assimetria na influência sobre as substâncias.
 //   temperaturaAmbiente -> sobe Alfa  (+)
 //   pressaoMangueiras   -> desce Alfa (-) [sobe Beta]
-//   pressaoAtmosferica  -> sobe ou desce Alfa consoante o seu valor
-//
-// Com fatores uniformes em [0,1] e pesos iguais, E[deltaAlfa] = 0,
-// ou seja, em média a mistura não deriva para nenhum lado.
+//   pressaoAtmosferica  -> afeta ambos
 void atualizarSubstancias() {
-  // Normaliza cada fator para [-1.0, +1.0] (neutro = 0 quando fator = 0.5)
-  float dTemp = (sistema.temperaturaAmbiente.valor - 0.5f) * 2.0f;
-  float dMang = (sistema.pressaoMangueiras.valor - 0.5f) * 2.0f;
-  float dAtm = (sistema.pressaoAtmosferica.valor - 0.5f) * 2.0f;
+  float dTemp = normalizarFator(sistema.temperaturaAmbiente);
+  float dMang = normalizarFator(sistema.pressaoMangueiras);
+  float dAtm = normalizarFator(sistema.pressaoAtmosferica);
 
-  // Pesos iguais; magnitude aleatória comum a todos os fatores
+  // Magnitude aleatória comum — pesos iguais para todos os fatores
   float magnitude = aleatorio(1.0f, 4.0f);
 
   float deltaAlfa = 0.0f;
-  deltaAlfa += dTemp * magnitude; // temperatura sobe Alfa
-  deltaAlfa -= dMang * magnitude; // mangueiras sobem Beta (inverso em Alfa)
-  deltaAlfa += dAtm * magnitude;  // atmosférica afeta ambos igualmente
+  deltaAlfa += dTemp * magnitude; // temperatura alta -> mais Alfa
+  deltaAlfa -= dMang * magnitude; // pressão mangueiras alta -> mais Beta
+  deltaAlfa += dAtm * magnitude;  // pressão câmara afeta ambos
 
-  sistema.alfa += deltaAlfa;
-
-  if (sistema.alfa < 0.0f)
-    sistema.alfa = 0.0f;
-  if (sistema.alfa > 100.0f)
-    sistema.alfa = 100.0f;
-
+  sistema.alfa = clampF(sistema.alfa + deltaAlfa, 0.0f, 100.0f);
   sistema.beta = 100.0f - sistema.alfa;
 }
 
@@ -168,7 +194,6 @@ void avaliarEstado() {
     return;
   }
 
-  // Atualiza os alertas
   sistema.alertaPreIgnicao = (sistema.alfa > 70.0f);
   sistema.alertaCorrosao = (sistema.beta > 80.0f);
 
@@ -483,7 +508,7 @@ void desenharTopbar() {
 void desenharPainelFatores() {
   // Todas as medidas em píxeis fixos — não escalam com a janela
   const float MARGEM = 16.0f;
-  const float LARGURA_PANEL = 270.0f;
+  const float LARGURA_PANEL = 310.0f;
   const float ALTURA_TITULO = 22.0f; // altura da linha de título
   const float ALTURA_LINHA = 22.0f;  // altura fixa de cada linha de fator
   const float SEP = 1.0f;            // espessura da linha separadora
@@ -515,26 +540,22 @@ void desenharPainelFatores() {
   // Linhas de fatores — espaçamento fixo de ALTURA_LINHA px
   char buf[32];
 
+  // Função auxiliar local para desenhar uma linha de fator
+  auto desenharLinhaFator = [&](const FatorExterno &f, float yL, float r,
+                                float g, float b) {
+    definirCor(0.55f, 0.65f, 0.70f);
+    desenharTextoMedio(f.nome, xTexto, yL);
+    snprintf(buf, sizeof(buf), "%.1f %s", f.valor, f.unidade);
+    definirCor(r, g, b);
+    desenharTextoMedio(buf, xValor - 40.0f, yL);
+  };
+
   float yLinha = ySep - ALTURA_LINHA + 4.0f;
-  definirCor(0.55f, 0.65f, 0.70f);
-  desenharTextoMedio("Pressao Mangueiras:", xTexto, yLinha);
-  snprintf(buf, sizeof(buf), "%.2f", sistema.pressaoMangueiras.valor);
-  definirCor(1.0f, 0.38f, 0.0f);
-  desenharTextoMedio(buf, xValor, yLinha);
-
+  desenharLinhaFator(sistema.pressaoMangueiras, yLinha, 1.0f, 0.38f, 0.0f);
   yLinha -= ALTURA_LINHA;
-  definirCor(0.55f, 0.65f, 0.70f);
-  desenharTextoMedio("Pressao Atmosferica:", xTexto, yLinha);
-  snprintf(buf, sizeof(buf), "%.2f", sistema.pressaoAtmosferica.valor);
-  definirCor(0.75f, 0.55f, 0.10f);
-  desenharTextoMedio(buf, xValor, yLinha);
-
+  desenharLinhaFator(sistema.pressaoAtmosferica, yLinha, 0.75f, 0.55f, 0.10f);
   yLinha -= ALTURA_LINHA;
-  definirCor(0.55f, 0.65f, 0.70f);
-  desenharTextoMedio("Temp. Ambiente:     ", xTexto, yLinha);
-  snprintf(buf, sizeof(buf), "%.2f", sistema.temperaturaAmbiente.valor);
-  definirCor(1.0f, 0.72f, 0.0f);
-  desenharTextoMedio(buf, xValor, yLinha);
+  desenharLinhaFator(sistema.temperaturaAmbiente, yLinha, 1.0f, 0.72f, 0.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -743,3 +764,13 @@ int main(int argc, char **argv) {
   glutMainLoop();
   return 0;
 }
+
+// TODO: Man, pede ao Claude para criar uma secção do relatório
+// onde ele explica que tinhamos o projeto numa condição pronta para entregar
+// mas que queriamos entregar mais, então depois de pensar em possiveis mudanças
+// e também de conversar com ele (incluir resumo dos chats) decidimos
+// criar um documento DEVGUIDE.md para organizar o que faltava fazer.
+//
+// WARNING: Sendo que não é para falar dos botões do alfa/beta
+// mas vais fazer essa feature primeiro antes dessa secção
+// só para ficar melhor organizado.
