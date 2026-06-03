@@ -56,6 +56,19 @@ struct EstadoPrincipal {
 EstadoPrincipal sistema;
 
 // ---------------------------------------------------------------------------
+// Zonas de clique dos botões (calculadas em desenharPainelSubstancias)
+// ---------------------------------------------------------------------------
+struct ZonaClique {
+  float x, y, largura, altura;
+  bool contem(float mx, float my) const {
+    return mx >= x && mx <= x + largura && my >= y && my <= y + altura;
+  }
+};
+
+ZonaClique botaoAumentarAlfa = {0, 0, 0, 0};
+ZonaClique botaoAumentarBeta = {0, 0, 0, 0};
+
+// ---------------------------------------------------------------------------
 // Inicialização
 // ---------------------------------------------------------------------------
 void inicializarSistema() {
@@ -356,6 +369,47 @@ void desenharPainelSubstancias() {
   desenharBarraSubstancia(xCentro, yBeta, LARGURA_BARRA, ALTURA_BARRA,
                           sistema.beta, 80.0f, 1.0f, 0.38f, 0.0f, // laranja
                           "BETA");
+
+  // -----------------------------------------------------------------------
+  // --- Botões de aumento ---
+  const float LARGURA_BTN = 180.0f;
+  const float ALTURA_BTN = 28.0f;
+  const float ESPACO_BTN = -50.0f; // espaço entre o fundo do painel e os botões
+  // Botão Alfa: centrado sob a barra de Alfa, deslocado para a esquerda
+  float xBtnAlfa = xCentro + LARGURA_BARRA / 2.0f - LARGURA_BTN - 8.0f;
+  float yBtnAlfa = yBeta - 30.0f + ESPACO_BTN;
+  // Botão Beta: centrado sob a barra de Beta, deslocado para a direita
+  float xBtnBeta = xCentro + LARGURA_BARRA / 2.0f + 8.0f;
+  float yBtnBeta = yBeta - 30.0f + ESPACO_BTN;
+
+  // Guardar zonas de clique globais
+  botaoAumentarAlfa = {xBtnAlfa, yBtnAlfa, LARGURA_BTN, ALTURA_BTN};
+  botaoAumentarBeta = {xBtnBeta, yBtnBeta, LARGURA_BTN, ALTURA_BTN};
+
+  // Desenhar botão ALFA
+  bool alfaMax = sistema.alfa >= 100.0f || sistema.sistemaTerminado;
+  definirCor(alfaMax ? 0.15f : 0.18f, alfaMax ? 0.15f : 0.14f,
+             alfaMax ? 0.15f : 0.02f);
+  desenharRetangulo(xBtnAlfa, yBtnAlfa, LARGURA_BTN, ALTURA_BTN);
+  definirCor(alfaMax ? 0.30f : 1.0f, alfaMax ? 0.30f : 0.72f, 0.0f);
+  desenharContorno(xBtnAlfa, yBtnAlfa, LARGURA_BTN, ALTURA_BTN, 1.5f);
+  // Texto centrado no botão (HELVETICA_18 ~ 11px por char, 14px altura)
+  const char *labelAlfa = "+ Aumentar ALFA";
+  float largTextoAlfa = strlen(labelAlfa) * 9.5f;
+  desenharTextoMedio(labelAlfa, xBtnAlfa + (LARGURA_BTN - largTextoAlfa) / 2.0f,
+                     yBtnAlfa + (ALTURA_BTN - 14.0f) / 2.0f);
+
+  // Desenhar botão BETA
+  bool betaMax = sistema.beta >= 100.0f || sistema.sistemaTerminado;
+  definirCor(betaMax ? 0.15f : 0.18f, betaMax ? 0.15f : 0.08f,
+             betaMax ? 0.15f : 0.02f);
+  desenharRetangulo(xBtnBeta, yBtnBeta, LARGURA_BTN, ALTURA_BTN);
+  definirCor(betaMax ? 0.30f : 1.0f, betaMax ? 0.12f : 0.38f, 0.0f);
+  desenharContorno(xBtnBeta, yBtnBeta, LARGURA_BTN, ALTURA_BTN, 1.5f);
+  const char *labelBeta = "+ Aumentar BETA";
+  float largTextoBeta = strlen(labelBeta) * 9.5f;
+  desenharTextoMedio(labelBeta, xBtnBeta + (LARGURA_BTN - largTextoBeta) / 2.0f,
+                     yBtnBeta + (ALTURA_BTN - 14.0f) / 2.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -543,6 +597,42 @@ void desenharPainelComandos() {
 }
 
 // ---------------------------------------------------------------------------
+// Rato — clique
+// ---------------------------------------------------------------------------
+void mouse(int botao, int estado, int x, int y) {
+  // Só age no soltar do botão esquerdo
+  if (botao != GLUT_LEFT_BUTTON || estado != GLUT_UP)
+    return;
+  if (sistema.sistemaTerminado)
+    return;
+
+  // Inverter Y: GLUT tem origem no canto superior esquerdo,
+  // OpenGL no canto inferior esquerdo
+  float mx = (float)x;
+  float my = (float)(alturaJanela - y);
+
+  if (botaoAumentarAlfa.contem(mx, my)) {
+    if (sistema.alfa < 100.0f) {
+      sistema.alfa += 5.0f;
+      if (sistema.alfa > 100.0f)
+        sistema.alfa = 100.0f;
+      sistema.beta = 100.0f - sistema.alfa;
+      avaliarEstado();
+      glutPostRedisplay();
+    }
+  } else if (botaoAumentarBeta.contem(mx, my)) {
+    if (sistema.beta < 100.0f) {
+      sistema.beta += 5.0f;
+      if (sistema.beta > 100.0f)
+        sistema.beta = 100.0f;
+      sistema.alfa = 100.0f - sistema.beta;
+      avaliarEstado();
+      glutPostRedisplay();
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Reshape — atualiza dimensões reais da janela
 // ---------------------------------------------------------------------------
 void reshape(int novaLargura, int novaAltura) {
@@ -645,6 +735,7 @@ int main(int argc, char **argv) {
   glutReshapeFunc(reshape);
   glutSetKeyRepeat(GLUT_KEY_REPEAT_OFF);
   glutKeyboardFunc(teclado);
+  glutMouseFunc(mouse);
 
   glutTimerFunc(1000, timerFatores, 0);
   glutTimerFunc(2000, timerSubstancias, 0);
