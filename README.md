@@ -24,6 +24,30 @@ During a spacecraft refuelling operation, two unstable chemical components — *
 - Temporary notification when the team finishes a stabilisation
 - Log system in `logs.txt` with timestamps for all relevant events
 
+## Screenshots
+
+<details>
+<summary><b>View Screen 1</b></summary>
+<br>
+
+<p align="center">
+  <img src="./assets/ecra1-1.png" alt="Ecrã 1 - Vista 1" width="32%" />
+  <img src="./assets/ecra1-2.png" alt="Ecrã 1 - Vista 2" width="32%" />
+  <img src="./assets/ecra1-3.png" alt="Ecrã 1 - Vista 3" width="32%" />
+</p>
+</details>
+
+<details>
+<summary><b>View Screen 2</b></summary>
+<br>
+
+<p align="center">
+  <img src="./assets/ecra2-1.png" alt="Ecrã 2 - Vista 1" width="32%" />
+  <img src="./assets/ecra2-2.png" alt="Ecrã 2 - Vista 2" width="32%" />
+  <img src="./assets/ecra2-3.png" alt="Ecrã 2 - Vista 3" width="32%" />
+</p>
+</details>
+
 ## Technologies
 
 - **C++17**
