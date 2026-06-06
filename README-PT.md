@@ -24,6 +24,30 @@ Durante o abastecimento de uma nave espacial, dois componentes químicos instáv
 - Notificação temporária quando a equipa termina uma estabilização
 - Sistema de logs em `logs.txt` com timestamp de todos os eventos relevantes
 
+## Screenshots
+
+<details>
+<summary><b>Visualizar Ecrã 1</b></summary>
+<br>
+
+<p align="center">
+  <img src="./assets/ecra1-1.png" alt="Ecrã 1 - Vista 1" width="32%" />
+  <img src="./assets/ecra1-2.png" alt="Ecrã 1 - Vista 2" width="32%" />
+  <img src="./assets/ecra1-3.png" alt="Ecrã 1 - Vista 3" width="32%" />
+</p>
+</details>
+
+<details>
+<summary><b>Visualizar Ecrã 2</b></summary>
+<br>
+
+<p align="center">
+  <img src="./assets/ecra2-1.png" alt="Ecrã 2 - Vista 1" width="32%" />
+  <img src="./assets/ecra2-2.png" alt="Ecrã 2 - Vista 2" width="32%" />
+  <img src="./assets/ecra2-3.png" alt="Ecrã 2 - Vista 3" width="32%" />
+</p>
+</details>
+
 ## Tecnologias
 
 - **C++17**
