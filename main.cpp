@@ -42,7 +42,7 @@ void gravarLog(const char *mensagem) {
 
   time_t agora = time(nullptr);
   struct tm *t = localtime(&agora);
-  fprintf(ficheiroLog, "[%04d-%02d-%02d : %02d-%02d-%02d] %s\n",
+  fprintf(ficheiroLog, "[%04d-%02d-%02d : %02d:%02d:%02d] %s\n",
           t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min,
           t->tm_sec, mensagem);
   fflush(ficheiroLog); // garante escrita imediata
