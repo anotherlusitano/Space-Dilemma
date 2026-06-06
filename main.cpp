@@ -134,6 +134,9 @@ ZonaClique botaoEquipaMang = {0, 0, 0, 0};
 ZonaClique botaoEquipaCam = {0, 0, 0, 0};
 ZonaClique botaoEquipaTemp = {0, 0, 0, 0};
 
+// Zona de clique do botão de navegação entre ecrãs
+ZonaClique botaoNavegacao = {0, 0, 0, 0};
+
 // ---------------------------------------------------------------------------
 // Inicialização
 // ---------------------------------------------------------------------------
@@ -650,6 +653,56 @@ void desenharPainelSubstancias() {
 }
 
 // ---------------------------------------------------------------------------
+// HUD — Barra de navegação entre ecrãs (abaixo da topbar)
+// ---------------------------------------------------------------------------
+void desenharBarraNavegacao() {
+  const float ALTURA_TOPBAR = 44.0f;
+  const float ALTURA_NAV = 30.0f;
+  const float yBase = (float)alturaJanela - ALTURA_TOPBAR - ALTURA_NAV;
+
+  // Fundo da barra de navegação
+  definirCor(0.07f, 0.09f, 0.11f);
+  desenharRetangulo(0.0f, yBase, (float)larguraJanela, ALTURA_NAV);
+
+  // Linha divisória em baixo
+  definirCor(0.18f, 0.24f, 0.30f);
+  desenharRetangulo(0.0f, yBase, (float)larguraJanela, 1.0f);
+
+  // Botão de navegação — canto direito da barra
+  const float LARGURA_BTN = 160.0f;
+  const float ALTURA_BTN = 22.0f;
+  const float xBtn = (float)larguraJanela - LARGURA_BTN - 10.0f;
+  const float yBtn = yBase + (ALTURA_NAV - ALTURA_BTN) / 2.0f;
+
+  // Guardar zona de clique
+  botaoNavegacao = {xBtn, yBtn, LARGURA_BTN, ALTURA_BTN};
+
+  // Fundo do botão
+  definirCor(0.10f, 0.16f, 0.22f);
+  desenharRetangulo(xBtn, yBtn, LARGURA_BTN, ALTURA_BTN);
+
+  // Borda do botão
+  definirCor(0.25f, 0.45f, 0.60f);
+  desenharContorno(xBtn, yBtn, LARGURA_BTN, ALTURA_BTN, 1.5f);
+
+  // Label dinâmica
+  const char *label =
+      (ecraoAtivo == 1) ? "Ir para Ecra 2 >" : "< Ir para Ecra 1";
+  float largTexto = strlen(label) * 9.0f;
+  float xTexto = xBtn + (LARGURA_BTN - largTexto) / 2.0f;
+  float yTexto = yBtn + (ALTURA_BTN - 14.0f) / 2.0f;
+
+  definirCor(0.55f, 0.80f, 1.0f);
+  desenharTextoMedio(label, xTexto, yTexto);
+
+  // Indicador do ecrã ativo — lado esquerdo da barra
+  definirCor(0.30f, 0.40f, 0.48f);
+  const char *indicador =
+      (ecraoAtivo == 1) ? "Ecra 1 — Monitorizacao" : "Ecra 2 — Controlo";
+  desenharTextoMedio(indicador, 12.0f, yBase + (ALTURA_NAV - 14.0f) / 2.0f);
+}
+
+// ---------------------------------------------------------------------------
 // HUD — Topbar de alertas
 // ---------------------------------------------------------------------------
 void desenharTopbar() {
@@ -917,6 +970,13 @@ void mouse(int botao, int estado, int x, int y) {
     }
   }
 
+  // Botão de navegação entre ecrãs (sempre disponível)
+  if (botaoNavegacao.contem(mx, my)) {
+    ecraoAtivo = (ecraoAtivo == 1) ? 2 : 1;
+    glutPostRedisplay();
+    return;
+  }
+
   // Botões da equipa (ecrã 2)
   if (ecraoAtivo == 2) {
     if (botaoEquipaMang.contem(mx, my))
@@ -1096,6 +1156,7 @@ void display() {
   glClear(GL_COLOR_BUFFER_BIT);
 
   desenharTopbar();
+  desenharBarraNavegacao();
 
   if (ecraoAtivo == 1) {
     desenharPainelSubstancias();
