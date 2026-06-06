@@ -674,28 +674,30 @@ void desenharPainelComandos() {
   // Linhas de comandos
   float yLinha = ySep - ALTURA_LINHA + 4.0f;
 
-  // Aumentar Alfa
-  definirCor(0.55f, 0.65f, 0.70f);
-  desenharTextoMedio("Aumentar Alfa", xTexto, yLinha);
-  definirCor(1.0f, 0.72f, 0.0f); // amarelo-ambar (cor do Alfa)
-  desenharTextoMedio("[A]", xTecla, yLinha);
-  yLinha -= ALTURA_LINHA;
+  if (ecraoAtivo == 1) {
+    // Aumentar Alfa (só no ecrã 1)
+    definirCor(0.55f, 0.65f, 0.70f);
+    desenharTextoMedio("Aumentar Alfa", xTexto, yLinha);
+    definirCor(1.0f, 0.72f, 0.0f);
+    desenharTextoMedio("[A]", xTecla, yLinha);
+    yLinha -= ALTURA_LINHA;
 
-  // Aumentar Beta
-  definirCor(0.55f, 0.65f, 0.70f);
-  desenharTextoMedio("Aumentar Beta", xTexto, yLinha);
-  definirCor(1.0f, 0.38f, 0.0f); // laranja (cor do Beta)
-  desenharTextoMedio("[B]", xTecla, yLinha);
-  yLinha -= ALTURA_LINHA;
+    // Aumentar Beta (só no ecrã 1)
+    definirCor(0.55f, 0.65f, 0.70f);
+    desenharTextoMedio("Aumentar Beta", xTexto, yLinha);
+    definirCor(1.0f, 0.38f, 0.0f);
+    desenharTextoMedio("[B]", xTecla, yLinha);
+    yLinha -= ALTURA_LINHA;
+  }
 
-  // Ajuda
+  // Ajuda (global)
   definirCor(0.55f, 0.65f, 0.70f);
   desenharTextoMedio("Ajuda (consola)", xTexto, yLinha);
   definirCor(0.45f, 0.55f, 0.62f);
   desenharTextoMedio("[H]", xTecla, yLinha);
   yLinha -= ALTURA_LINHA;
 
-  // Mudar de ecrã
+  // Mudar de ecrã (global)
   definirCor(0.55f, 0.65f, 0.70f);
   desenharTextoMedio(ecraoAtivo == 1 ? "Ecra Controlo" : "Ecra Monitor.",
                      xTexto, yLinha);
@@ -790,29 +792,38 @@ void display() {
 // Teclado
 // ---------------------------------------------------------------------------
 void teclado(unsigned char key, int x, int y) {
+  // Controlos exclusivos do ecrã 1
+  if (ecraoAtivo == 1) {
+    switch (key) {
+    case 'a':
+    case 'A':
+      // Aumenta Alfa em 5%; Beta ajusta para manter soma = 100
+      if (!sistema.sistemaTerminado && sistema.alfa < 100.0f) {
+        sistema.alfa += 5.0f;
+        if (sistema.alfa > 100.0f)
+          sistema.alfa = 100.0f;
+        sistema.beta = 100.0f - sistema.alfa;
+        avaliarEstado();
+        glutPostRedisplay();
+      }
+      break;
+    case 'b':
+    case 'B':
+      // Aumenta Beta em 5%; Alfa ajusta para manter soma = 100
+      if (!sistema.sistemaTerminado && sistema.beta < 100.0f) {
+        sistema.beta += 5.0f;
+        if (sistema.beta > 100.0f)
+          sistema.beta = 100.0f;
+        sistema.alfa = 100.0f - sistema.beta;
+        avaliarEstado();
+        glutPostRedisplay();
+      }
+      break;
+    }
+  }
+
+  // Teclas globais — funcionam em qualquer ecrã
   switch (key) {
-  case 'a':
-  case 'A':
-    if (!sistema.sistemaTerminado && sistema.alfa < 100.0f) {
-      sistema.alfa += 5.0f;
-      if (sistema.alfa > 100.0f)
-        sistema.alfa = 100.0f;
-      sistema.beta = 100.0f - sistema.alfa;
-      avaliarEstado();
-      glutPostRedisplay();
-    }
-    break;
-  case 'b':
-  case 'B':
-    if (!sistema.sistemaTerminado && sistema.beta < 100.0f) {
-      sistema.beta += 5.0f;
-      if (sistema.beta > 100.0f)
-        sistema.beta = 100.0f;
-      sistema.alfa = 100.0f - sistema.beta;
-      avaliarEstado();
-      glutPostRedisplay();
-    }
-    break;
   case '1':
     ecraoAtivo = 1;
     glutPostRedisplay();
