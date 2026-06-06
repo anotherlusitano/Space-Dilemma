@@ -14,6 +14,11 @@ int alturaJanela = ALTURA_JANELA;
 // Ecrã ativo: 1 = Monitorização, 2 = Controlo & Histórico
 int ecraoAtivo = 1;
 
+// Snackbar — mensagem temporária no ecrã 1
+char snackbarMsg[64] = "";
+int snackbarTicks = 0; // ticks restantes (a 1s cada)
+const int SNACKBAR_DURACAO = 4;
+
 // ---------------------------------------------------------------------------
 // Estados do Sistema
 // ---------------------------------------------------------------------------
@@ -268,6 +273,10 @@ void atualizarFatores() {
         f->valor = f->neutro;
         f->fase = FASE_ESTAVEL;
         f->direcaoDeriva = 0.0f;
+        // Ativa snackbar no ecrã 1
+        snprintf(snackbarMsg, sizeof(snackbarMsg), "Equipa: %s estabilizado.",
+                 f->nome);
+        snackbarTicks = SNACKBAR_DURACAO;
         sistema.fatorEmEstabilizacao = -1;
       }
     }
@@ -347,6 +356,12 @@ void timerFatores(int valor) {
     return;
 
   atualizarFatores();
+
+  // Conta down da snackbar
+  if (snackbarTicks > 0) {
+    snackbarTicks--;
+    glutPostRedisplay();
+  }
 
   glutTimerFunc(1000, timerFatores, 0);
 }
@@ -818,6 +833,36 @@ void mouse(int botao, int estado, int x, int y) {
 }
 
 // ---------------------------------------------------------------------------
+// HUD — Snackbar (mensagem temporária, centro inferior, ecrã 1)
+// ---------------------------------------------------------------------------
+void desenharSnackbar() {
+  if (snackbarTicks <= 0 || snackbarMsg[0] == '\0')
+    return;
+
+  const float ALTURA_SB = 34.0f;
+  const float MARGEM_SB = 60.0f;
+  const float LARGURA_SB = (float)larguraJanela - 2.0f * MARGEM_SB;
+  const float xBase = MARGEM_SB;
+  const float yBase = 16.0f; // um pouco acima do fundo
+
+  // Fundo
+  definirCor(0.08f, 0.18f, 0.12f);
+  desenharRetangulo(xBase, yBase, LARGURA_SB, ALTURA_SB);
+
+  // Borda verde subtil
+  definirCor(0.20f, 0.60f, 0.30f);
+  desenharContorno(xBase, yBase, LARGURA_SB, ALTURA_SB, 1.5f);
+
+  // Texto centrado
+  int largTexto = (int)(strlen(snackbarMsg) * 10.0f);
+  float xTexto = xBase + (LARGURA_SB - largTexto) / 2.0f;
+  float yTexto = yBase + (ALTURA_SB - 14.0f) / 2.0f;
+
+  definirCor(0.45f, 0.90f, 0.55f);
+  desenharTextoMedio(snackbarMsg, xTexto, yTexto);
+}
+
+// ---------------------------------------------------------------------------
 // Ecrã 2 — Controlo & Histórico
 // ---------------------------------------------------------------------------
 void desenharBotoesEquipa() {
@@ -959,6 +1004,7 @@ void display() {
     desenharPainelSubstancias();
     desenharPainelFatores();
     desenharPainelComandos();
+    desenharSnackbar();
   } else {
     desenharEcra2();
   }
