@@ -1,4 +1,5 @@
 #include <GL/freeglut.h>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -12,6 +13,11 @@ int alturaJanela = ALTURA_JANELA;
 
 // Ecrã ativo: 1 = Monitorização, 2 = Controlo & Histórico
 int ecraoAtivo = 1;
+
+// Snackbar — mensagem temporária no ecrã 1
+char snackbarMsg[64] = "";
+int snackbarTicks = 0; // ticks restantes (a 1s cada)
+const int SNACKBAR_DURACAO = 4;
 
 // ---------------------------------------------------------------------------
 // Estados do Sistema
@@ -64,6 +70,10 @@ struct EstadoPrincipal {
   FatorExterno pressaoMangueiras;
   FatorExterno pressaoAtmosferica;
   FatorExterno temperaturaAmbiente;
+
+  // Equipa — índice do fator a ser estabilizado (-1 = nenhum)
+  // 0 = pressaoMangueiras, 1 = pressaoAtmosferica, 2 = temperaturaAmbiente
+  int fatorEmEstabilizacao;
 };
 
 // Instância global do estado
@@ -81,6 +91,11 @@ struct ZonaClique {
 
 ZonaClique botaoAumentarAlfa = {0, 0, 0, 0};
 ZonaClique botaoAumentarBeta = {0, 0, 0, 0};
+
+// Zonas de clique dos botões da equipa (ecrã 2)
+ZonaClique botaoEquipaMang = {0, 0, 0, 0};
+ZonaClique botaoEquipaCam = {0, 0, 0, 0};
+ZonaClique botaoEquipaTemp = {0, 0, 0, 0};
 
 // ---------------------------------------------------------------------------
 // Inicialização
@@ -101,6 +116,8 @@ void inicializarSistema() {
                                 FASE_ESTAVEL,     0.0f};
   sistema.temperaturaAmbiente = {"Temp. Camara", "C",   20.0f,        20.0f,
                                  -20.0f,         60.0f, FASE_ESTAVEL, 0.0f};
+
+  sistema.fatorEmEstabilizacao = -1;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +136,14 @@ float normalizarFator(const FatorExterno &f) {
     return (f.valor - f.neutro) / (f.valorMax - f.neutro);
   else
     return (f.valor - f.neutro) / (f.neutro - f.valorMin);
+}
+
+// Chama a equipa para estabilizar um fator (0=mangueiras, 1=camara, 2=temp)
+// Só aceita se não houver outro fator em estabilização
+void chamarEquipa(int indiceFator) {
+  if (sistema.fatorEmEstabilizacao != -1)
+    return; // equipa ocupada
+  sistema.fatorEmEstabilizacao = indiceFator;
 }
 
 // Clampa um valor entre min e max
@@ -230,6 +255,32 @@ void atualizarFatores() {
                sistema.temperaturaAmbiente.valorMin,
                sistema.temperaturaAmbiente.valorMax);
   }
+
+  // Estabilização gradual pela equipa
+  if (sistema.fatorEmEstabilizacao >= 0) {
+    FatorExterno *f = nullptr;
+    if (sistema.fatorEmEstabilizacao == 0)
+      f = &sistema.pressaoMangueiras;
+    else if (sistema.fatorEmEstabilizacao == 1)
+      f = &sistema.pressaoAtmosferica;
+    else if (sistema.fatorEmEstabilizacao == 2)
+      f = &sistema.temperaturaAmbiente;
+
+    if (f != nullptr) {
+      f->valor += (f->neutro - f->valor) * 0.15f;
+      // Repõe fase a estável e liberta a equipa quando próximo do neutro
+      if (fabsf(f->valor - f->neutro) < 0.5f) {
+        f->valor = f->neutro;
+        f->fase = FASE_ESTAVEL;
+        f->direcaoDeriva = 0.0f;
+        // Ativa snackbar no ecrã 1
+        snprintf(snackbarMsg, sizeof(snackbarMsg), "Equipa: %s estabilizado.",
+                 f->nome);
+        snackbarTicks = SNACKBAR_DURACAO;
+        sistema.fatorEmEstabilizacao = -1;
+      }
+    }
+  }
 }
 
 // Atualiza Alfa e Beta mantendo a soma = 100.
@@ -305,6 +356,12 @@ void timerFatores(int valor) {
     return;
 
   atualizarFatores();
+
+  // Conta down da snackbar
+  if (snackbarTicks > 0) {
+    snackbarTicks--;
+    glutPostRedisplay();
+  }
 
   glutTimerFunc(1000, timerFatores, 0);
 }
@@ -636,7 +693,7 @@ void desenharPainelFatores() {
 void desenharPainelComandos() {
   const float MARGEM = 16.0f;
   const float LARGURA_PANEL = 230.0f;
-  const float ALTURA_TITULO = 60.0f;
+  const float ALTURA_TITULO = 65.0f;
   const float ALTURA_LINHA = 22.0f;
   const float SEP = 1.0f;
   const int NUM_LINHAS = 4;
@@ -667,7 +724,7 @@ void desenharPainelComandos() {
                      xTexto, yEcraoLabel);
 
   // Linha separadora
-  float ySep = yBase + ALTURA_PANEL - ALTURA_TITULO;
+  float ySep = yBase + ALTURA_PANEL - ALTURA_TITULO + 12.0f;
   definirCor(0.20f, 0.28f, 0.35f);
   desenharRetangulo(xBase + 8.0f, ySep, LARGURA_PANEL - 16.0f, SEP);
 
@@ -687,6 +744,29 @@ void desenharPainelComandos() {
     desenharTextoMedio("Aumentar Beta", xTexto, yLinha);
     definirCor(1.0f, 0.38f, 0.0f);
     desenharTextoMedio("[B]", xTecla, yLinha);
+    yLinha -= ALTURA_LINHA;
+  }
+
+  if (ecraoAtivo == 2) {
+    // Chamar equipa — Mangueiras
+    definirCor(0.55f, 0.65f, 0.70f);
+    desenharTextoMedio("Equipa Mangueiras", xTexto, yLinha);
+    definirCor(0.45f, 0.78f, 0.45f);
+    desenharTextoMedio("[M]", xTecla, yLinha);
+    yLinha -= ALTURA_LINHA;
+
+    // Chamar equipa — Câmara
+    definirCor(0.55f, 0.65f, 0.70f);
+    desenharTextoMedio("Equipa Camara", xTexto, yLinha);
+    definirCor(0.45f, 0.78f, 0.45f);
+    desenharTextoMedio("[C]", xTecla, yLinha);
+    yLinha -= ALTURA_LINHA;
+
+    // Chamar equipa — Temperatura
+    definirCor(0.55f, 0.65f, 0.70f);
+    desenharTextoMedio("Equipa Temp.", xTexto, yLinha);
+    definirCor(0.45f, 0.78f, 0.45f);
+    desenharTextoMedio("[T]", xTecla, yLinha);
     yLinha -= ALTURA_LINHA;
   }
 
@@ -739,6 +819,148 @@ void mouse(int botao, int estado, int x, int y) {
       glutPostRedisplay();
     }
   }
+
+  // Botões da equipa (ecrã 2)
+  if (ecraoAtivo == 2) {
+    if (botaoEquipaMang.contem(mx, my))
+      chamarEquipa(0);
+    else if (botaoEquipaCam.contem(mx, my))
+      chamarEquipa(1);
+    else if (botaoEquipaTemp.contem(mx, my))
+      chamarEquipa(2);
+    glutPostRedisplay();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// HUD — Snackbar (mensagem temporária, centro inferior, ecrã 1)
+// ---------------------------------------------------------------------------
+void desenharSnackbar() {
+  if (snackbarTicks <= 0 || snackbarMsg[0] == '\0')
+    return;
+
+  const float ALTURA_SB = 34.0f;
+  const float MARGEM_SB = 60.0f;
+  const float LARGURA_SB = (float)larguraJanela - 2.0f * MARGEM_SB;
+  const float xBase = MARGEM_SB;
+  const float yBase = 16.0f; // um pouco acima do fundo
+
+  // Fundo
+  definirCor(0.08f, 0.18f, 0.12f);
+  desenharRetangulo(xBase, yBase, LARGURA_SB, ALTURA_SB);
+
+  // Borda verde subtil
+  definirCor(0.20f, 0.60f, 0.30f);
+  desenharContorno(xBase, yBase, LARGURA_SB, ALTURA_SB, 1.5f);
+
+  // Texto centrado
+  int largTexto = (int)(strlen(snackbarMsg) * 10.0f);
+  float xTexto = xBase + (LARGURA_SB - largTexto) / 2.0f;
+  float yTexto = yBase + (ALTURA_SB - 14.0f) / 2.0f;
+
+  definirCor(0.45f, 0.90f, 0.55f);
+  desenharTextoMedio(snackbarMsg, xTexto, yTexto);
+}
+
+// ---------------------------------------------------------------------------
+// Ecrã 2 — Controlo & Histórico
+// ---------------------------------------------------------------------------
+void desenharBotoesEquipa() {
+  const float LARGURA_BTN = 320.0f;
+  const float ALTURA_BTN = 52.0f;
+  const float ESPACO_BTN = 14.0f;
+  const float totalAltura = 3.0f * ALTURA_BTN + 2.0f * ESPACO_BTN;
+  const float xBase = ((float)larguraJanela - LARGURA_BTN) / 2.0f;
+  const float yBase = ((float)alturaJanela - totalAltura) / 2.0f;
+
+  // Título central
+  definirCor(0.45f, 0.55f, 0.62f);
+  desenharTexto("CHAMAR EQUIPA", xBase, yBase + totalAltura + 20.0f);
+
+  // Linha separadora sob título
+  definirCor(0.20f, 0.28f, 0.35f);
+  desenharRetangulo(xBase, yBase + totalAltura + 16.0f, LARGURA_BTN, 1.5f);
+
+  // Dados dos 3 botões
+  struct InfoBotao {
+    const char *label;
+    const char *tecla;
+    const char *valor;
+    int indice;
+    ZonaClique *zona;
+  };
+
+  char bufM[24], bufC[24], bufT[24];
+  snprintf(bufM, sizeof(bufM), "%.1f %s", sistema.pressaoMangueiras.valor,
+           sistema.pressaoMangueiras.unidade);
+  snprintf(bufC, sizeof(bufC), "%.1f %s", sistema.pressaoAtmosferica.valor,
+           sistema.pressaoAtmosferica.unidade);
+  snprintf(bufT, sizeof(bufT), "%.1f %s", sistema.temperaturaAmbiente.valor,
+           sistema.temperaturaAmbiente.unidade);
+
+  InfoBotao botoes[3] = {
+      {sistema.pressaoMangueiras.nome, "[M]", bufM, 0, &botaoEquipaMang},
+      {sistema.pressaoAtmosferica.nome, "[C]", bufC, 1, &botaoEquipaCam},
+      {sistema.temperaturaAmbiente.nome, "[T]", bufT, 2, &botaoEquipaTemp},
+  };
+
+  for (int i = 0; i < 3; i++) {
+    float yBtn = yBase + (2 - i) * (ALTURA_BTN + ESPACO_BTN);
+    *botoes[i].zona = {xBase, yBtn, LARGURA_BTN, ALTURA_BTN};
+
+    bool esteAEstabilizar = (sistema.fatorEmEstabilizacao == botoes[i].indice);
+    bool outroAEstabilizar =
+        (sistema.fatorEmEstabilizacao != -1 && !esteAEstabilizar);
+
+    // Cor de fundo do botão
+    if (esteAEstabilizar) {
+      definirCor(0.18f, 0.16f, 0.02f); // amarelo escuro
+    } else if (outroAEstabilizar) {
+      definirCor(0.14f, 0.04f, 0.04f); // vermelho escuro
+    } else {
+      definirCor(0.08f, 0.10f, 0.13f); // cinzento disponível
+    }
+    desenharRetangulo(xBase, yBtn, LARGURA_BTN, ALTURA_BTN);
+
+    // Borda
+    if (esteAEstabilizar) {
+      definirCor(0.85f, 0.72f, 0.10f);
+    } else if (outroAEstabilizar) {
+      definirCor(0.55f, 0.10f, 0.10f);
+    } else {
+      definirCor(0.25f, 0.35f, 0.42f);
+    }
+    desenharContorno(xBase, yBtn, LARGURA_BTN, ALTURA_BTN, 1.5f);
+
+    // Texto — linha 1: nome do fator + tecla
+    float yTexto1 = yBtn + ALTURA_BTN - 20.0f;
+    float yTexto2 = yBtn + 8.0f;
+
+    if (esteAEstabilizar) {
+      definirCor(1.0f, 0.85f, 0.20f);
+    } else if (outroAEstabilizar) {
+      definirCor(0.55f, 0.22f, 0.22f);
+    } else {
+      definirCor(0.75f, 0.85f, 0.90f);
+    }
+    desenharTextoMedio(botoes[i].label, xBase + 12.0f, yTexto1);
+
+    // Tecla alinhada à direita
+    definirCor(0.45f, 0.78f, 0.45f);
+    desenharTextoMedio(botoes[i].tecla, xBase + LARGURA_BTN - 42.0f, yTexto1);
+
+    // Linha 2: valor atual ou estado
+    if (esteAEstabilizar) {
+      definirCor(1.0f, 0.85f, 0.20f);
+      desenharTextoPequeno("A estabilizar...", xBase + 12.0f, yTexto2);
+    } else if (outroAEstabilizar) {
+      definirCor(0.55f, 0.22f, 0.22f);
+      desenharTextoPequeno("Indisponivel", xBase + 12.0f, yTexto2);
+    } else {
+      definirCor(0.50f, 0.60f, 0.65f);
+      desenharTextoPequeno(botoes[i].valor, xBase + 12.0f, yTexto2);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -765,6 +987,7 @@ void reshape(int novaLargura, int novaAltura) {
 // Ecrã 2 — Controlo & Histórico
 // ---------------------------------------------------------------------------
 void desenharEcra2() {
+  desenharBotoesEquipa();
   desenharPainelFatores();
   desenharPainelComandos();
 }
@@ -781,6 +1004,7 @@ void display() {
     desenharPainelSubstancias();
     desenharPainelFatores();
     desenharPainelComandos();
+    desenharSnackbar();
   } else {
     desenharEcra2();
   }
@@ -818,6 +1042,27 @@ void teclado(unsigned char key, int x, int y) {
         avaliarEstado();
         glutPostRedisplay();
       }
+      break;
+    }
+  }
+
+  // Controlos exclusivos do ecrã 2
+  if (ecraoAtivo == 2) {
+    switch (key) {
+    case 'm':
+    case 'M':
+      chamarEquipa(0);
+      glutPostRedisplay();
+      break;
+    case 'c':
+    case 'C':
+      chamarEquipa(1);
+      glutPostRedisplay();
+      break;
+    case 't':
+    case 'T':
+      chamarEquipa(2);
+      glutPostRedisplay();
       break;
     }
   }
