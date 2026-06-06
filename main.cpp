@@ -10,6 +10,9 @@ const int ALTURA_JANELA = 600;
 int larguraJanela = LARGURA_JANELA;
 int alturaJanela = ALTURA_JANELA;
 
+// Ecrã ativo: 1 = Monitorização, 2 = Controlo & Histórico
+int ecraoAtivo = 1;
+
 // ---------------------------------------------------------------------------
 // Estados do Sistema
 // ---------------------------------------------------------------------------
@@ -437,7 +440,7 @@ void desenharPainelSubstancias() {
   const float ALTURA_BARRA = 32.0f;
   const float ESPACAMENTO = 70.0f; // distância vertical entre as duas barras
   const float xCentro = (larguraJanela - LARGURA_BARRA) / 2.0f;
-  const float yCentroJanela = alturaJanela / 2.0f;
+  const float yCentroJanela = alturaJanela / 1.7f;
 
   // Posições Y das barras (a barra de Alfa fica acima da de Beta)
   float yAlfa = yCentroJanela + ESPACAMENTO / 2.0f;
@@ -633,10 +636,10 @@ void desenharPainelFatores() {
 void desenharPainelComandos() {
   const float MARGEM = 16.0f;
   const float LARGURA_PANEL = 230.0f;
-  const float ALTURA_TITULO = 22.0f;
+  const float ALTURA_TITULO = 60.0f;
   const float ALTURA_LINHA = 22.0f;
   const float SEP = 1.0f;
-  const int NUM_LINHAS = 3;
+  const int NUM_LINHAS = 4;
   const float ALTURA_PANEL =
       ALTURA_TITULO + SEP + ALTURA_LINHA * NUM_LINHAS + 16.0f;
   const float xBase = (float)larguraJanela - LARGURA_PANEL - MARGEM;
@@ -653,9 +656,15 @@ void desenharPainelComandos() {
   desenharContorno(xBase, yBase, LARGURA_PANEL, ALTURA_PANEL, 1.5f);
 
   // Título
-  float yTitulo = yBase + ALTURA_PANEL - ALTURA_TITULO + 4.0f;
+  float yTitulo = yBase + ALTURA_PANEL - 20.0f;
   definirCor(0.45f, 0.55f, 0.62f);
   desenharTextoMedio("COMANDOS", xTexto, yTitulo);
+
+  // Indicador de ecrã ativo no título
+  float yEcraoLabel = yBase + ALTURA_PANEL - 42.0f;
+  definirCor(0.30f, 0.40f, 0.35f);
+  desenharTextoMedio(ecraoAtivo == 1 ? "Ecra: Monitorizacao" : "Ecra: Controlo",
+                     xTexto, yEcraoLabel);
 
   // Linha separadora
   float ySep = yBase + ALTURA_PANEL - ALTURA_TITULO;
@@ -684,6 +693,14 @@ void desenharPainelComandos() {
   desenharTextoMedio("Ajuda (consola)", xTexto, yLinha);
   definirCor(0.45f, 0.55f, 0.62f);
   desenharTextoMedio("[H]", xTecla, yLinha);
+  yLinha -= ALTURA_LINHA;
+
+  // Mudar de ecrã
+  definirCor(0.55f, 0.65f, 0.70f);
+  desenharTextoMedio(ecraoAtivo == 1 ? "Ecra Controlo" : "Ecra Monitor.",
+                     xTexto, yLinha);
+  definirCor(0.45f, 0.78f, 0.45f);
+  desenharTextoMedio(ecraoAtivo == 1 ? "[2]" : "[1]", xTecla, yLinha);
 }
 
 // ---------------------------------------------------------------------------
@@ -743,15 +760,28 @@ void reshape(int novaLargura, int novaAltura) {
 }
 
 // ---------------------------------------------------------------------------
+// Ecrã 2 — Controlo & Histórico
+// ---------------------------------------------------------------------------
+void desenharEcra2() {
+  desenharPainelFatores();
+  desenharPainelComandos();
+}
+
+// ---------------------------------------------------------------------------
 // Display
 // ---------------------------------------------------------------------------
 void display() {
   glClear(GL_COLOR_BUFFER_BIT);
 
   desenharTopbar();
-  desenharPainelSubstancias();
-  desenharPainelFatores();
-  desenharPainelComandos();
+
+  if (ecraoAtivo == 1) {
+    desenharPainelSubstancias();
+    desenharPainelFatores();
+    desenharPainelComandos();
+  } else {
+    desenharEcra2();
+  }
 
   glutSwapBuffers();
 }
@@ -782,6 +812,14 @@ void teclado(unsigned char key, int x, int y) {
       avaliarEstado();
       glutPostRedisplay();
     }
+    break;
+  case '1':
+    ecraoAtivo = 1;
+    glutPostRedisplay();
+    break;
+  case '2':
+    ecraoAtivo = 2;
+    glutPostRedisplay();
     break;
   case 'h':
   case 'H':
