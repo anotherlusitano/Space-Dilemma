@@ -20,6 +20,43 @@ int snackbarTicks = 0; // ticks restantes (a 1s cada)
 const int SNACKBAR_DURACAO = 4;
 
 // ---------------------------------------------------------------------------
+// Sistema de Logs
+// ---------------------------------------------------------------------------
+FILE *ficheiroLog = nullptr;
+
+void inicializarLog() {
+  ficheiroLog = fopen("logs.txt", "a");
+  if (!ficheiroLog) {
+    printf("[AVISO] Nao foi possivel abrir logs.txt\n");
+    return;
+  }
+  // Separador de sessão
+  fprintf(ficheiroLog, "\n================================================\n");
+  fprintf(ficheiroLog, "     Nova Sessao de Monitorizacao\n");
+  fprintf(ficheiroLog, "================================================\n");
+}
+
+void gravarLog(const char *mensagem) {
+  if (!ficheiroLog)
+    return;
+
+  time_t agora = time(nullptr);
+  struct tm *t = localtime(&agora);
+  fprintf(ficheiroLog, "[%04d-%02d-%02d : %02d-%02d-%02d] %s\n",
+          t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min,
+          t->tm_sec, mensagem);
+  fflush(ficheiroLog); // garante escrita imediata
+}
+
+void fecharLog() {
+  if (!ficheiroLog)
+    return;
+  gravarLog("Sistema encerrado.");
+  fclose(ficheiroLog);
+  ficheiroLog = nullptr;
+}
+
+// ---------------------------------------------------------------------------
 // Estados do Sistema
 // ---------------------------------------------------------------------------
 enum EstadoSistema {
@@ -144,6 +181,14 @@ void chamarEquipa(int indiceFator) {
   if (sistema.fatorEmEstabilizacao != -1)
     return; // equipa ocupada
   sistema.fatorEmEstabilizacao = indiceFator;
+
+  const char *nomes[3] = {sistema.pressaoMangueiras.nome,
+                          sistema.pressaoAtmosferica.nome,
+                          sistema.temperaturaAmbiente.nome};
+  char buf[128];
+  snprintf(buf, sizeof(buf), "Operador chamou equipa para: %s",
+           nomes[indiceFator]);
+  gravarLog(buf);
 }
 
 // Clampa um valor entre min e max
@@ -273,6 +318,12 @@ void atualizarFatores() {
         f->valor = f->neutro;
         f->fase = FASE_ESTAVEL;
         f->direcaoDeriva = 0.0f;
+        // Grava log antes de libertar o ponteiro
+        char logBuf[128];
+        snprintf(logBuf, sizeof(logBuf),
+                 "Equipa concluiu estabilizacao de: %s (valor neutro: %.1f %s)",
+                 f->nome, f->neutro, f->unidade);
+        gravarLog(logBuf);
         // Ativa snackbar no ecrã 1
         snprintf(snackbarMsg, sizeof(snackbarMsg), "Equipa: %s estabilizado.",
                  f->nome);
@@ -308,19 +359,51 @@ void atualizarSubstancias() {
   sistema.beta = 100.0f - sistema.alfa;
 }
 
-// Avalia o estado do sistema com base nos valores atuais
-// Com soma = 100: Alfa >= 100 significa Beta = 0, e vice-versa
+// Avalia o estado do sistema com base nos valores atuais.
+// Deteta transições de alerta e grava-as no log.
 void avaliarEstado() {
   if (sistema.alfa >= 100.0f || sistema.beta >= 100.0f) {
+    if (!sistema.sistemaTerminado) {
+      char buf[128];
+      snprintf(buf, sizeof(buf), "FALHA CRITICA — Alfa: %.1f%% | Beta: %.1f%%",
+               sistema.alfa, sistema.beta);
+      gravarLog(buf);
+    }
     sistema.estado = FALHA;
     sistema.sistemaTerminado = true;
     return;
   }
 
-  sistema.alertaPreIgnicao = (sistema.alfa > 70.0f);
-  sistema.alertaCorrosao = (sistema.beta > 80.0f);
+  bool novoPreIgnicao = (sistema.alfa > 70.0f);
+  bool novaCorrosao = (sistema.beta > 80.0f);
+  char buf[128];
 
-  // PRE_IGNICAO tem prioridade (Alfa > 70 é mais perigoso a curto prazo)
+  // Transições de pré-ignição
+  if (novoPreIgnicao && !sistema.alertaPreIgnicao) {
+    snprintf(buf, sizeof(buf), "ALERTA: Pre-ignicao ativado — Alfa em %.1f%%",
+             sistema.alfa);
+    gravarLog(buf);
+  } else if (!novoPreIgnicao && sistema.alertaPreIgnicao) {
+    snprintf(buf, sizeof(buf), "Pre-ignicao resolvido — Alfa em %.1f%%",
+             sistema.alfa);
+    gravarLog(buf);
+  }
+
+  // Transições de corrosão
+  if (novaCorrosao && !sistema.alertaCorrosao) {
+    snprintf(buf, sizeof(buf),
+             "ALERTA: Corrosao de valvulas ativado — Beta em %.1f%%",
+             sistema.beta);
+    gravarLog(buf);
+  } else if (!novaCorrosao && sistema.alertaCorrosao) {
+    snprintf(buf, sizeof(buf),
+             "Corrosao de valvulas resolvido — Beta em %.1f%%", sistema.beta);
+    gravarLog(buf);
+  }
+
+  sistema.alertaPreIgnicao = novoPreIgnicao;
+  sistema.alertaCorrosao = novaCorrosao;
+
   if (sistema.alertaPreIgnicao) {
     sistema.estado = PRE_IGNICAO;
   } else if (sistema.alertaCorrosao) {
@@ -807,6 +890,13 @@ void mouse(int botao, int estado, int x, int y) {
         sistema.alfa = 100.0f;
       sistema.beta = 100.0f - sistema.alfa;
       avaliarEstado();
+      {
+        char buf[128];
+        snprintf(buf, sizeof(buf),
+                 "Operador aumentou Alfa (botao) — Alfa: %.1f%% | Beta: %.1f%%",
+                 sistema.alfa, sistema.beta);
+        gravarLog(buf);
+      }
       glutPostRedisplay();
     }
   } else if (botaoAumentarBeta.contem(mx, my)) {
@@ -816,6 +906,13 @@ void mouse(int botao, int estado, int x, int y) {
         sistema.beta = 100.0f;
       sistema.alfa = 100.0f - sistema.beta;
       avaliarEstado();
+      {
+        char buf[128];
+        snprintf(buf, sizeof(buf),
+                 "Operador aumentou Beta (botao) — Alfa: %.1f%% | Beta: %.1f%%",
+                 sistema.alfa, sistema.beta);
+        gravarLog(buf);
+      }
       glutPostRedisplay();
     }
   }
@@ -1021,25 +1118,37 @@ void teclado(unsigned char key, int x, int y) {
     switch (key) {
     case 'a':
     case 'A':
-      // Aumenta Alfa em 5%; Beta ajusta para manter soma = 100
       if (!sistema.sistemaTerminado && sistema.alfa < 100.0f) {
         sistema.alfa += 5.0f;
         if (sistema.alfa > 100.0f)
           sistema.alfa = 100.0f;
         sistema.beta = 100.0f - sistema.alfa;
         avaliarEstado();
+        {
+          char buf[128];
+          snprintf(buf, sizeof(buf),
+                   "Operador aumentou Alfa — Alfa: %.1f%% | Beta: %.1f%%",
+                   sistema.alfa, sistema.beta);
+          gravarLog(buf);
+        }
         glutPostRedisplay();
       }
       break;
     case 'b':
     case 'B':
-      // Aumenta Beta em 5%; Alfa ajusta para manter soma = 100
       if (!sistema.sistemaTerminado && sistema.beta < 100.0f) {
         sistema.beta += 5.0f;
         if (sistema.beta > 100.0f)
           sistema.beta = 100.0f;
         sistema.alfa = 100.0f - sistema.beta;
         avaliarEstado();
+        {
+          char buf[128];
+          snprintf(buf, sizeof(buf),
+                   "Operador aumentou Beta — Alfa: %.1f%% | Beta: %.1f%%",
+                   sistema.alfa, sistema.beta);
+          gravarLog(buf);
+        }
         glutPostRedisplay();
       }
       break;
@@ -1102,7 +1211,9 @@ int main(int argc, char **argv) {
   // diferentes a cada execução
   srand((unsigned int)time(NULL));
 
+  inicializarLog();
   inicializarSistema();
+  gravarLog("Sistema iniciado — Alfa: 50.0% | Beta: 50.0%");
 
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
@@ -1125,15 +1236,7 @@ int main(int argc, char **argv) {
   glutTimerFunc(2000, timerSubstancias, 0);
 
   glutMainLoop();
+
+  fecharLog();
   return 0;
 }
-
-// TODO: Man, pede ao Claude para criar uma secção do relatório
-// onde ele explica que tinhamos o projeto numa condição pronta para entregar
-// mas que queriamos entregar mais, então depois de pensar em possiveis mudanças
-// e também de conversar com ele (incluir resumo dos chats) decidimos
-// criar um documento DEVGUIDE.md para organizar o que faltava fazer.
-//
-// WARNING: Sendo que não é para falar dos botões do alfa/beta
-// mas vais fazer essa feature primeiro antes dessa secção
-// só para ficar melhor organizado.
